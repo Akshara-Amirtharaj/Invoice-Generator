@@ -124,7 +124,7 @@ def generate_invoice():
         })
 
     # Select template based on region and payment option
-    if payment_option == "One Part" and not service_description:
+    if payment_option == "One Part" and not service_description.strip():
         template_name = {
             "ROW": "One Part Payment ROW no service.docx",
             "India": "One Part Payment INDIA no service.docx",
