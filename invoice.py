@@ -1,32 +1,56 @@
 import streamlit as st
 from datetime import datetime
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 
 def replace_placeholders(doc, placeholders):
-    """Replace placeholders in a document without changing formatting or alignment."""
+    """Replace placeholders in a document while maintaining proper alignment."""
+    # Keywords to detect left-side content
+    left_side_keywords = [
+        "BILL TO", "Mobile No", "Address", "Email", "Project Name", "Company Name"
+    ]
+
     # Iterate through all paragraphs
     for para in doc.paragraphs:
         for key, value in placeholders.items():
             if key in para.text:
                 inline = para.runs
-                # Loop over runs and replace text
                 for i in range(len(inline)):
                     if key in inline[i].text:
                         inline[i].text = inline[i].text.replace(key, value)
+                # Force left alignment for specific placeholders
+                if any(keyword in para.text for keyword in left_side_keywords):
+                    para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    para.paragraph_format.left_indent = None  # Reset any indent
+                    para.paragraph_format.first_line_indent = None  # Reset first-line indent
 
     # Iterate through all tables
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                for key, value in placeholders.items():
-                    if key in cell.text:
-                        # Replace placeholders in each paragraph in the cell
-                        for para in cell.paragraphs:
-                            if key in para.text:
-                                inline = para.runs
-                                for i in range(len(inline)):
-                                    if key in inline[i].text:
-                                        inline[i].text = inline[i].text.replace(key, value)
+                for para in cell.paragraphs:
+                    for key, value in placeholders.items():
+                        if key in para.text:
+                            inline = para.runs
+                            for i in range(len(inline)):
+                                if key in inline[i].text:
+                                    inline[i].text = inline[i].text.replace(key, value)
+                            # Force left alignment for specific placeholders in tables
+                            if any(keyword in para.text for keyword in left_side_keywords):
+                                para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                                para.paragraph_format.left_indent = None
+                                para.paragraph_format.first_line_indent = None
+
+    return doc
+
+    return doc
+
+
+def format_percentage(value):
+    """Format percentage without decimals."""
+    return f"{int(value)}%"
+
 
 def edit_invoice_template(template_name, output_path, placeholders):
     """Edit an invoice template and save the result."""
@@ -40,12 +64,16 @@ def edit_invoice_template(template_name, output_path, placeholders):
 
 def format_price(price, currency):
     """Format price to display correctly with the currency."""
-    formatted_price = f"{int(price)}" if price == int(price) else f"{price:.2f}"
+    if price.is_integer():
+        formatted_price = f"{int(price)}"
+    else:
+        formatted_price = f"{price:.2f}"
     if currency == "USD":
         return f"{formatted_price} USD"
     elif currency == "Rupees":
         return f"Rs. {formatted_price}"
     return formatted_price
+
 
 def generate_invoice():
     """Streamlit app for generating invoices."""
@@ -81,13 +109,22 @@ def generate_invoice():
         p3_percentage = 100 - (p1_percentage + p2_percentage)
 
     # Calculate payment amounts
+    # Calculate payment amounts
     if payment_option == "Two Parts":
-        price1 = total_amount * (p1_percentage / 100)
-        price2 = total_amount * (p2_percentage / 100)
+       p1_percentage = round(p1_percentage)
+       p2_percentage = 100 - p1_percentage
+       price = round(total_amount * (p1_percentage / 100))
+       price2 = total_amount - price
+       
     elif payment_option == "Three Parts":
-        price1 = total_amount * (p1_percentage / 100)
-        price2 = total_amount * (p2_percentage / 100)
-        price3 = total_amount * (p3_percentage / 100)
+       p1_percentage = round(p1_percentage)
+       p2_percentage = round(p2_percentage)
+       p3_percentage = 100 - (p1_percentage + p2_percentage)
+       price = round(total_amount * (p1_percentage / 100))
+       price2 = round(total_amount * (p2_percentage / 100))
+       price3 = total_amount - (price + price2)
+
+
 
     # Generate placeholders
     formatted_date = invoice_date.strftime("%d/%m/%Y")
@@ -108,20 +145,21 @@ def generate_invoice():
 
     if payment_option == "Two Parts":
         placeholders.update({
-            "<<P1>>": f"{p1_percentage}%",
-            "<<Price1>>": format_price(price1, currency),
-            "<<P2>>": f"{p2_percentage}%",
+            "<<P1>>": format_percentage(p1_percentage),
+            "<<Price>>": format_price(price, currency),
+            "<<P2>>": format_percentage(p2_percentage),
             "<<Price2>>": format_price(price2, currency),
-        })
+       })
     elif payment_option == "Three Parts":
         placeholders.update({
-            "<<P1>>": f"{p1_percentage}%",
-            "<<Price1>>": format_price(price1, currency),
-            "<<P2>>": f"{p2_percentage}%",
+            "<<P1>>": format_percentage(p1_percentage),
+            "<<Price>>": format_price(price, currency),
+            "<<P2>>": format_percentage(p2_percentage),
             "<<Price2>>": format_price(price2, currency),
-            "<<P3>>": f"{p3_percentage}%",
+            "<<P3>>": format_percentage(p3_percentage),
             "<<Price3>>": format_price(price3, currency),
         })
+
 
     # Select template based on region and payment option
     if payment_option == "One Part" and not service_description.strip():
